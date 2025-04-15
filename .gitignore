@@ -1,0 +1,4 @@
+.env
+global-bundle.pem
+linkedin.py
+*__pycache__
