@@ -36,7 +36,7 @@ def verify_aws_credentials():
         st.error(f"Full Error Details: {traceback.format_exc()}")
         return False
 
-st.set_page_config(layout="wide")
+#st.set_page_config(layout="wide")
 
 # Load environment variables
 load_dotenv()  # Loads variables from .env into os.environ

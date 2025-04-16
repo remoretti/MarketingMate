@@ -28,4 +28,5 @@ COPY . /app/
 EXPOSE 8501
 
 # Run the app
-CMD ["streamlit", "run", "app_dynamodb.py", "--server.enableCORS", "false"]
+#CMD ["streamlit", "run", "app_dynamodb.py", "--server.enableCORS", "false"]
+CMD ["streamlit", "run", "app.py", "--server.enableCORS", "false"]

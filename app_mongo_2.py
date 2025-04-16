@@ -17,7 +17,7 @@ from langchain.schema import HumanMessage
 from pymongo import MongoClient
 from datetime import datetime, timedelta
 
-st.set_page_config(layout="wide")
+#st.set_page_config(layout="wide")
 
 # Load environment variables
 load_dotenv()  # Loads variables from .env into os.environ
