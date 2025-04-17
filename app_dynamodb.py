@@ -323,6 +323,345 @@ def database_management_section():
 # ---------------------------
 # ... [previous code remains unchanged above Content Creation Section]
 
+# def content_creation_section():
+#     st.markdown("# Content Creation")
+#     col1, col2 = st.columns([1, 2])
+    
+#     with col1:
+#         # Retrieve articles from DynamoDB
+#         response = table.scan()
+#         articles = response.get('Items', [])
+        
+#         if not articles:
+#             st.error("No articles found in the database. Please build and persist your knowledge base.")
+#             return
+        
+#         df_db = pd.DataFrame(articles)
+        
+#         # Convert timestamp string to datetime for filtering
+#         df_db["timestamp_parsed"] = pd.to_datetime(df_db["timestamp"], errors="coerce")
+#         # --- Filter by Date ---
+#         st.markdown("#### Filters")
+#         date_filter_option = st.selectbox(
+#             "Time filter", 
+#             ["No Filter", "Last 24 hrs", "Last 3 days", "Last week", "Last month"]
+#         )
+#         if date_filter_option != "No Filter":
+#             now = datetime.utcnow()
+#             if date_filter_option == "Last 24 hrs":
+#                 cutoff = now - timedelta(days=1)
+#             elif date_filter_option == "Last 3 days":
+#                 cutoff = now - timedelta(days=3)
+#             elif date_filter_option == "Last week":
+#                 cutoff = now - timedelta(days=7)
+#             elif date_filter_option == "Last month":
+#                 cutoff = now - timedelta(days=30)
+#             df_db = df_db[df_db["timestamp_parsed"] >= cutoff]
+        
+#                 # --- Filter by Source ---
+#         source_filter_option = st.selectbox(
+#             "Filter by Source", 
+#             ["All"] + sorted(df_db["source"].unique().tolist())
+#         )
+#         if source_filter_option != "All":
+#             df_db = df_db[df_db["source"] == source_filter_option]
+        
+#         # --- Filter by Relevance ---
+#         dt_threshold = st.slider("Digital Transformation", 0, 15, 0)
+#         ga_threshold = st.slider("Generative AI", 0, 15, 0)
+#         ml_threshold = st.slider("Machine Learning / Data Science", 0, 15, 0)
+#         ft_threshold = st.slider("Finance in tech", 0, 15, 0)
+        
+#         df_db = df_db[
+#             (df_db["digital_transformation"] >= dt_threshold) &
+#             (df_db["generative_ai"] >= ga_threshold) &
+#             (df_db["machine_learning"] >= ml_threshold) &
+#             (df_db["finance_in_tech"] >= ft_threshold)
+#         ]
+    
+#     with col2:
+#     # --- Display Filtered Articles with Renamed Columns ---
+#         df_display = df_db[["Title", "source", "timestamp", "digital_transformation", "generative_ai", "machine_learning", "finance_in_tech", "url", "summary"]].copy()
+#         df_display_renamed = df_display.rename(columns={
+#             "source": "Source",
+#             "timestamp": "Released on",
+#             "digital_transformation": "Dig Transf",
+#             "generative_ai": "Gen AI",
+#             "machine_learning": "ML",
+#             "finance_in_tech": "FinTec"
+#         })
+        
+#         st.markdown("#### Filtered Articles")
+#         # Display a DataFrame without the hidden fields.
+#         df_reset = df_display_renamed.drop(columns=["url", "summary"]).reset_index(drop=True)
+#         st.dataframe(df_reset, height=500)
+#     st.markdown("---")
+        
+#     col3, col6, col7 = st.columns([1, 2, 2,])
+#     with col3:
+#         # --- Article Selection Section ---
+#         st.markdown("#### Article Selection")
+#         # --- Row Selection ---
+#         selected_title = st.selectbox("Select an Article (by title)", df_display_renamed["Title"].unique())
+#         selected_article = df_db[df_db["Title"] == selected_title].iloc[0]
+
+        
+#         #st.write("**Title:**", selected_article["Title"])
+#         st.write("**Source:**", selected_article["source"])
+#         st.write("**Released on:**", selected_article["timestamp"])
+#         # Display the article text.
+#         #st.markdown("**Article Content:**")
+#         st.markdown("#### Select Output Form")
+#         form_choice = st.radio("Choose your output destination:", options=["LinkedIn", "Newsletter"])
+#         if form_choice == "Newsletter":
+#             specific_choice = st.radio("Select Newsletter frequency:", options=["Weekly", "Monthly"])
+#         elif form_choice == "LinkedIn":
+#             specific_choice = st.radio("Select LinkedIn post type:", options=[
+#                 "New post", "Carousel", "Commercial post", "Erik's self branding"
+#             ])
+   
+#     with col6:
+#         st.text_area("Full Article Text", selected_article["text"], height=800)
+#         article_url = selected_article["url"]
+#         article_text = get_article_text(article_url)
+#         if not article_text:
+#             st.error("Failed to retrieve article content.")
+#         else:
+#             if st.button("Confirm Choices"):
+#                 # Initialize conversation thread if it doesn't exist
+#                 # Note: Using only user and assistant roles, no system role
+#                 if "conversation_thread" not in st.session_state:
+#                     st.session_state.conversation_thread = []
+                
+#                 # Initialize content versions if it doesn't exist
+#                 if "content_versions" not in st.session_state:
+#                     st.session_state.content_versions = []
+                
+#                 prompt_key = (form_choice, specific_choice)
+#                 if prompt_key not in prompt_dict:
+#                     st.error("No prompt defined for this combination.")
+#                 else:
+#                     prompt_text = prompt_dict[prompt_key]
+#                     # Add instructional prefix to make up for lack of system message
+#                     full_prompt = f"You are a marketing content expert helping create and refine content based on articles. {prompt_text}\n\nArticle content:\n{article_text}"
+                    
+#                     # Add user prompt to conversation thread
+#                     st.session_state.conversation_thread.append(
+#                         {"role": "user", "content": full_prompt}
+#                     )
+                    
+#                     st.info("Calling the language model for content generation...")
+#                     try:
+#                         client = OpenAI()
+#                         response = client.chat.completions.create(
+#                             model="o1-mini",
+#                             messages=st.session_state.conversation_thread,
+#                             max_completion_tokens=5000
+#                             #temperature=1
+#                         )
+#                         llm_output = response.choices[0].message.content.strip()
+                        
+#                         # Add assistant response to conversation thread
+#                         st.session_state.conversation_thread.append(
+#                             {"role": "assistant", "content": llm_output}
+#                         )
+                        
+#                         # Store the content in session state
+#                         st.session_state.llm_output = llm_output
+                        
+#                         # Add to content versions
+#                         st.session_state.content_versions.append({
+#                             "version": 1,
+#                             "content": llm_output,
+#                             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+#                             "description": "Initial generation"
+#                         })
+                        
+#                         # Set current version index
+#                         st.session_state.current_version_index = 0
+                        
+#                     except Exception as e:
+#                         st.error(f"Error during LLM call: {e}")    
+
+#     with col7:
+#         if "llm_output" in st.session_state:
+#             # Create tabs for content and history
+#             content_tab, history_tab = st.tabs(["Content", "Version History"])
+            
+#             with content_tab:
+#                 # Get the current content
+#                 current_content = st.session_state.llm_output
+#                 if "edited_content" in st.session_state:
+#                     current_content = st.session_state.edited_content
+                
+#                 # Display editable text area
+#                 edited_content = st.text_area(
+#                     f"LLM Output for {form_choice} {specific_choice}", 
+#                     current_content, 
+#                     height=500
+#                 )
+                
+#                 # Update edited content in session state if changed
+#                 if edited_content != current_content:
+#                     st.session_state.edited_content = edited_content
+                
+#                 # Conversation interface
+#                 st.markdown("### How would you like to improve this content?")
+                
+#                 # Initialize refinement history if it doesn't exist
+#                 if "refinement_history" not in st.session_state:
+#                     st.session_state.refinement_history = []
+                
+#                 # Display refinement history
+#                 for i, exchange in enumerate(st.session_state.refinement_history):
+#                     with st.expander(f"Refinement {i+1}: {exchange['instruction'][:50]}...", expanded=False):
+#                         st.markdown(f"**Your instruction:**\n{exchange['instruction']}")
+#                         st.markdown(f"**AI response:**\n{exchange['response']}")
+                
+#                 # Input for new refinement - use a unique key based on the number of refinements
+#                 # This naturally creates a new widget each time, avoiding the need to clear it
+#                 refinement_key = f"refinement_instruction_{len(st.session_state.refinement_history)}"
+#                 user_instruction = st.text_input("Enter your instruction:", key=refinement_key)
+                
+#                 if st.button("Apply Changes", key=f"apply_changes_{len(st.session_state.refinement_history)}"):
+#                     if user_instruction:
+#                         # Get current content (either edited or original)
+#                         current_content = edited_content if "edited_content" in st.session_state else st.session_state.llm_output
+                        
+#                         # Add user instruction to conversation thread
+#                         st.session_state.conversation_thread.append(
+#                             {"role": "user", "content": f"Here is the current content:\n\n{current_content}\n\nInstruction: {user_instruction}"}
+#                         )
+                        
+#                         with st.spinner("Processing your request..."):
+#                             try:
+#                                 # Call OpenAI with the full conversation history
+#                                 client = OpenAI()
+#                                 response = client.chat.completions.create(
+#                                     model="o1-mini",
+#                                     messages=st.session_state.conversation_thread,
+#                                     max_completion_tokens=5000
+#                                     #temperature=0.7
+#                                 )
+                                
+#                                 # Get the refined content
+#                                 refined_content = response.choices[0].message.content.strip()
+                                
+#                                 # Add assistant response to conversation thread
+#                                 st.session_state.conversation_thread.append(
+#                                     {"role": "assistant", "content": refined_content}
+#                                 )
+                                
+#                                 # Update the output
+#                                 st.session_state.llm_output = refined_content
+                                
+#                                 # Clear edited content
+#                                 if "edited_content" in st.session_state:
+#                                     del st.session_state.edited_content
+                                
+#                                 # Add to refinement history
+#                                 st.session_state.refinement_history.append({
+#                                     "instruction": user_instruction,
+#                                     "response": refined_content
+#                                 })
+                                
+#                                 # Add to content versions
+#                                 st.session_state.content_versions.append({
+#                                     "version": len(st.session_state.content_versions) + 1,
+#                                     "content": refined_content,
+#                                     "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+#                                     "description": user_instruction[:50] + "..." if len(user_instruction) > 50 else user_instruction
+#                                 })
+                                
+#                                 # Update current version index
+#                                 st.session_state.current_version_index = len(st.session_state.content_versions) - 1
+                                
+#                                 st.success("Content updated successfully!")
+#                                 st.rerun()
+                                
+#                             except Exception as e:
+#                                 st.error(f"Error during refinement: {e}")
+                            
+#                             # Button to review edits
+#                             if "edited_content" in st.session_state and st.session_state.edited_content != st.session_state.llm_output:
+#                                 if st.button("Review My Edits"):
+#                                     with st.spinner("Analyzing your edits..."):
+#                                         try:
+#                                             # Create a prompt for reviewing edits (without system role)
+#                                             review_prompt = [
+#                                                 {"role": "user", "content": f"You are a marketing content expert helping review edits. Original content:\n\n{st.session_state.llm_output}\n\nEdited content:\n\n{st.session_state.edited_content}\n\nPlease review these edits and provide feedback on the changes made. Are they good changes? What improved and what might need further attention?"}
+#                                             ]
+                                            
+#                                             # Call OpenAI for review
+#                                             client = OpenAI()
+#                                             response = client.chat.completions.create(
+#                                                 model="o1-mini",
+#                                                 messages=review_prompt,
+#                                                 max_completion_tokens=2000
+#                                                 #temperature=0.5
+#                                             )
+                                            
+#                                             # Display the review
+#                                             review_result = response.choices[0].message.content.strip()
+#                                             st.session_state.edit_review = review_result
+                                            
+#                                         except Exception as e:
+#                                             st.error(f"Error during edit review: {e}")
+                
+#                 # Display edit review if available
+#                 if "edit_review" in st.session_state:
+#                     with st.expander("Edit Review", expanded=True):
+#                         st.markdown(st.session_state.edit_review)
+            
+#             with history_tab:
+#                 st.markdown("### Version History")
+                
+#                 if "content_versions" in st.session_state and st.session_state.content_versions:
+#                     # Create a DataFrame of versions for display
+#                     versions_df = pd.DataFrame([
+#                         {
+#                             "Version": v["version"],
+#                             "Timestamp": v["timestamp"],
+#                             "Description": v["description"],
+#                         } for v in st.session_state.content_versions
+#                     ])
+                    
+#                     # Display versions table
+#                     st.dataframe(versions_df)
+                    
+#                     # Version selection
+#                     selected_version = st.selectbox(
+#                         "Select a version to view or restore:",
+#                         range(len(st.session_state.content_versions)),
+#                         format_func=lambda i: f"V{st.session_state.content_versions[i]['version']}: {st.session_state.content_versions[i]['description'][:30]}...",
+#                         index=st.session_state.current_version_index
+#                     )
+                    
+#                     # Show selected version content
+#                     st.text_area(
+#                         "Version Content", 
+#                         st.session_state.content_versions[selected_version]["content"],
+#                         height=300
+#                     )
+                    
+#                     # Restore button
+#                     if selected_version != st.session_state.current_version_index:
+#                         if st.button("Restore This Version"):
+#                             # Update current content
+#                             st.session_state.llm_output = st.session_state.content_versions[selected_version]["content"]
+                            
+#                             # Update current version index
+#                             st.session_state.current_version_index = selected_version
+                            
+#                             # Clear edited content
+#                             if "edited_content" in st.session_state:
+#                                 del st.session_state.edited_content
+                            
+#                             st.success(f"Restored to version {st.session_state.content_versions[selected_version]['version']}")
+#                             st.rerun()
+#                 else:
+#                     st.info("No version history available yet.")
+
 def content_creation_section():
     st.markdown("# Content Creation")
     col1, col2 = st.columns([1, 2])
@@ -358,7 +697,7 @@ def content_creation_section():
                 cutoff = now - timedelta(days=30)
             df_db = df_db[df_db["timestamp_parsed"] >= cutoff]
         
-                # --- Filter by Source ---
+        # --- Filter by Source ---
         source_filter_option = st.selectbox(
             "Filter by Source", 
             ["All"] + sorted(df_db["source"].unique().tolist())
@@ -380,7 +719,7 @@ def content_creation_section():
         ]
     
     with col2:
-    # --- Display Filtered Articles with Renamed Columns ---
+        # Display Filtered Articles with Renamed Columns
         df_display = df_db[["Title", "source", "timestamp", "digital_transformation", "generative_ai", "machine_learning", "finance_in_tech", "url", "summary"]].copy()
         df_display_renamed = df_display.rename(columns={
             "source": "Source",
@@ -392,69 +731,105 @@ def content_creation_section():
         })
         
         st.markdown("#### Filtered Articles")
-        # Display a DataFrame without the hidden fields.
+        # Display a DataFrame without the hidden fields
         df_reset = df_display_renamed.drop(columns=["url", "summary"]).reset_index(drop=True)
-        st.dataframe(df_reset, height=500)
+        
+        # Using Streamlit's native row selection feature
+        selection = st.dataframe(
+            df_reset,
+            height=500,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Title": st.column_config.TextColumn("Title", width="large"),
+                "Source": st.column_config.TextColumn("Source", width="small"),
+                "Released on": st.column_config.TextColumn("Released on", width="medium"),
+                "Dig Transf": st.column_config.NumberColumn("Dig Transf", width="small"),
+                "Gen AI": st.column_config.NumberColumn("Gen AI", width="small"),
+                "ML": st.column_config.NumberColumn("ML", width="small"),
+                "FinTec": st.column_config.NumberColumn("FinTec", width="small")
+            },
+            on_select="rerun",  # Rerun the app when a selection is made
+            selection_mode="single-row"  # Allow only one row to be selected at a time
+        )
     st.markdown("---")
-        
-    col3, col4, col5 = st.columns([1, 2, 2,])
+
+    col3, col4, col5 = st.columns([1, 1, 1])
+
     with col3:
-        # --- Article Selection Section ---
+        # Article Selection Section
         st.markdown("#### Article Selection")
-        # --- Row Selection ---
-        selected_title = st.selectbox("Select an Article (by title)", df_display_renamed["Title"].unique())
-        selected_article = df_db[df_db["Title"] == selected_title].iloc[0]
-
         
-        #st.write("**Title:**", selected_article["Title"])
-        st.write("**Source:**", selected_article["source"])
-        st.write("**Released on:**", selected_article["timestamp"])
-        # Display the article text.
-        #st.markdown("**Article Content:**")
-        st.markdown("#### Select Output Form")
-        form_choice = st.radio("Choose your output destination:", options=["LinkedIn", "Newsletter"])
-        if form_choice == "Newsletter":
-            specific_choice = st.radio("Select Newsletter frequency:", options=["Weekly", "Monthly"])
-        elif form_choice == "LinkedIn":
-            specific_choice = st.radio("Select LinkedIn post type:", options=[
-                "New post", "Carousel", "Commercial post", "Erik's self branding"
-            ])
+        # Check if a row is selected
+        if selection.selection and hasattr(selection.selection, 'rows') and len(selection.selection.rows) > 0:
+            # Get the index of the selected row
+            selected_row_index = selection.selection.rows[0]
+            # Get the title of the selected article
+            selected_article_title = df_reset.iloc[selected_row_index]["Title"]
+            # Find the selected article in the original dataframe
+            selected_article = df_db[df_db["Title"] == selected_article_title].iloc[0]
+            
+            # Show success message
+            st.success(f"Selected: {selected_article_title}")
+            st.write("**Source:**", selected_article["source"])
+            st.write("**Released on:**", selected_article["timestamp"])
+        else:
+            # If no row is selected, just show a message
+            st.warning("Select an article by clicking on a row in the table above")
+            return  # Exit the function early
+        
+        with col4:
+            st.markdown("#### Select Output Form")
+            # Display the article text
+        
+            form_choice = st.radio("Choose your output destination:", options=["LinkedIn", "Newsletter"])
+            if form_choice == "Newsletter":
+                specific_choice = st.radio("Select Newsletter frequency:", options=["Weekly", "Monthly"])
+            elif form_choice == "LinkedIn":
+                specific_choice = st.radio("Select LinkedIn post type:", options=[
+                    "New post", "Carousel", "Commercial post", "Erik's self branding"
+                ])
+
     
-    # with col4:
-    #     st.text_area("Full Article Text", selected_article["text"], height=800)
-    #     article_url = selected_article["url"]
-    #     article_text = get_article_text(article_url)
-    #     if not article_text:
-    #         st.error("Failed to retrieve article content.")
-    #     else:
-    #         if st.button("Confirm Choices"):
-    #             prompt_key = (form_choice, specific_choice)
-    #             if prompt_key not in prompt_dict:
-    #                 st.error("No prompt defined for this combination.")
-    #             else:
-    #                 prompt_text = prompt_dict[prompt_key]
-    #                 full_prompt = f"{prompt_text}\n\nArticle content:\n{article_text}"
-    #                 st.info("Calling the language model for content generation...")
-    #                 try:
-    #                     client = OpenAI()
-    #                     response = client.chat.completions.create(
-    #                         model="o1-mini",
-    #                         messages=[{"role": "user", "content": full_prompt}],
-    #                         max_completion_tokens=5000,
-    #                         temperature=1
-    #                     )
-    #                     llm_output = response.choices[0].message.content.strip()
-    #                     st.session_state.llm_output = llm_output
-    #                 except Exception as e:
-    #                     st.error(f"Error during LLM call: {e}")    
-
-    # with col5:
+    st.markdown("---")
+    st.markdown("#### Content Elaboration")
         
-    #         if "llm_output" in st.session_state:
-    #             #st.markdown(f"### Proposed {form_choice} content")
-    #             st.text_area(f"LLM Output for {form_choice} {specific_choice}", st.session_state.llm_output, height=800)
-
-    with col4:
+    # col3, col6, col7 = st.columns([1, 2, 2])
+    # with col3:
+    #     # Article Selection Section
+    #     st.markdown("#### Article Selection")
+        
+    #     # Check if a row is selected
+    #     if selection.selection and hasattr(selection.selection, 'rows') and len(selection.selection.rows) > 0:
+    #         # Get the index of the selected row
+    #         selected_row_index = selection.selection.rows[0]
+    #         # Get the title of the selected article
+    #         selected_article_title = df_reset.iloc[selected_row_index]["Title"]
+    #         # Find the selected article in the original dataframe
+    #         selected_article = df_db[df_db["Title"] == selected_article_title].iloc[0]
+            
+    #         # Show success message
+    #         st.success(f"Selected: {selected_article_title}")
+    #     else:
+    #         # Fallback to dropdown selection if no row is selected
+    #         st.info("Select an article by clicking on a row in the table above, or use the dropdown below:")
+    #         selected_title = st.selectbox("Select an Article (by title)", df_display_renamed["Title"].unique())
+    #         selected_article = df_db[df_db["Title"] == selected_title].iloc[0]
+        
+    #     st.write("**Source:**", selected_article["source"])
+    #     st.write("**Released on:**", selected_article["timestamp"])
+        
+    #     # Display the article text
+    #     st.markdown("#### Select Output Form")
+    #     form_choice = st.radio("Choose your output destination:", options=["LinkedIn", "Newsletter"])
+    #     if form_choice == "Newsletter":
+    #         specific_choice = st.radio("Select Newsletter frequency:", options=["Weekly", "Monthly"])
+    #     elif form_choice == "LinkedIn":
+    #         specific_choice = st.radio("Select LinkedIn post type:", options=[
+    #             "New post", "Carousel", "Commercial post", "Erik's self branding"
+    #         ])
+    col6, col7 = st.columns([1, 1])    
+    with col6:
         st.text_area("Full Article Text", selected_article["text"], height=800)
         article_url = selected_article["url"]
         article_text = get_article_text(article_url)
@@ -463,7 +838,6 @@ def content_creation_section():
         else:
             if st.button("Confirm Choices"):
                 # Initialize conversation thread if it doesn't exist
-                # Note: Using only user and assistant roles, no system role
                 if "conversation_thread" not in st.session_state:
                     st.session_state.conversation_thread = []
                 
@@ -491,7 +865,6 @@ def content_creation_section():
                             model="o1-mini",
                             messages=st.session_state.conversation_thread,
                             max_completion_tokens=5000
-                            #temperature=1
                         )
                         llm_output = response.choices[0].message.content.strip()
                         
@@ -517,7 +890,7 @@ def content_creation_section():
                     except Exception as e:
                         st.error(f"Error during LLM call: {e}")    
 
-    with col5:
+    with col7:
         if "llm_output" in st.session_state:
             # Create tabs for content and history
             content_tab, history_tab = st.tabs(["Content", "Version History"])
@@ -553,7 +926,6 @@ def content_creation_section():
                         st.markdown(f"**AI response:**\n{exchange['response']}")
                 
                 # Input for new refinement - use a unique key based on the number of refinements
-                # This naturally creates a new widget each time, avoiding the need to clear it
                 refinement_key = f"refinement_instruction_{len(st.session_state.refinement_history)}"
                 user_instruction = st.text_input("Enter your instruction:", key=refinement_key)
                 
@@ -575,7 +947,6 @@ def content_creation_section():
                                     model="o1-mini",
                                     messages=st.session_state.conversation_thread,
                                     max_completion_tokens=5000
-                                    #temperature=0.7
                                 )
                                 
                                 # Get the refined content
@@ -615,32 +986,31 @@ def content_creation_section():
                                 
                             except Exception as e:
                                 st.error(f"Error during refinement: {e}")
-                            
-                            # Button to review edits
-                            if "edited_content" in st.session_state and st.session_state.edited_content != st.session_state.llm_output:
-                                if st.button("Review My Edits"):
-                                    with st.spinner("Analyzing your edits..."):
-                                        try:
-                                            # Create a prompt for reviewing edits (without system role)
-                                            review_prompt = [
-                                                {"role": "user", "content": f"You are a marketing content expert helping review edits. Original content:\n\n{st.session_state.llm_output}\n\nEdited content:\n\n{st.session_state.edited_content}\n\nPlease review these edits and provide feedback on the changes made. Are they good changes? What improved and what might need further attention?"}
-                                            ]
-                                            
-                                            # Call OpenAI for review
-                                            client = OpenAI()
-                                            response = client.chat.completions.create(
-                                                model="o1-mini",
-                                                messages=review_prompt,
-                                                max_completion_tokens=2000
-                                                #temperature=0.5
-                                            )
-                                            
-                                            # Display the review
-                                            review_result = response.choices[0].message.content.strip()
-                                            st.session_state.edit_review = review_result
-                                            
-                                        except Exception as e:
-                                            st.error(f"Error during edit review: {e}")
+                
+                # Button to review edits
+                if "edited_content" in st.session_state and st.session_state.edited_content != st.session_state.llm_output:
+                    if st.button("Review My Edits"):
+                        with st.spinner("Analyzing your edits..."):
+                            try:
+                                # Create a prompt for reviewing edits (without system role)
+                                review_prompt = [
+                                    {"role": "user", "content": f"You are a marketing content expert helping review edits. Original content:\n\n{st.session_state.llm_output}\n\nEdited content:\n\n{st.session_state.edited_content}\n\nPlease review these edits and provide feedback on the changes made. Are they good changes? What improved and what might need further attention?"}
+                                ]
+                                
+                                # Call OpenAI for review
+                                client = OpenAI()
+                                response = client.chat.completions.create(
+                                    model="o1-mini",
+                                    messages=review_prompt,
+                                    max_completion_tokens=2000
+                                )
+                                
+                                # Display the review
+                                review_result = response.choices[0].message.content.strip()
+                                st.session_state.edit_review = review_result
+                                
+                            except Exception as e:
+                                st.error(f"Error during edit review: {e}")
                 
                 # Display edit review if available
                 if "edit_review" in st.session_state:
