@@ -1,14 +1,21 @@
 # Define dedicated prompts for each combination.
 prompt_dict = {
     ("Newsletter", "Weekly"): (
-        "You are a skilled newsletter writer. Summarize the following article into a concise, engaging weekly newsletter that highlights the key points and insights."
+        """
+        You are a skilled newsletter writer. Summarize the following article into a concise, engaging weekly newsletter that highlights the key points and insights.
+        Before delivering your answer, revise the output and remove all Markdown characters like **.        
+        """
     ),
     ("Newsletter", "Monthly"): (
-        "You are a skilled newsletter writer. Create a detailed monthly newsletter summary of the following article, including an engaging introduction, key insights, and a thoughtful conclusion."
+        """
+        You are a skilled newsletter writer. Create a detailed monthly newsletter summary of the following article, including an engaging introduction, key insights, and a thoughtful conclusion.
+        Before delivering your answer, revise the output and remove all Markdown characters like **.        
+        """
     ),
     ("LinkedIn", "New post"): (
         """
         You are a professional LinkedIn content creator.
+        
         First: read the style of my following LinkedIn posts and try to understand their structure and patterns.
         Examples (5 total):
         1. The hype around AI is overwhelming 🤯 
@@ -82,7 +89,7 @@ prompt_dict = {
 
         At Xantage, we help industrial companies build an effective data strategy—optimizing data collection, management, and utilization to create a real competitive advantage.
 
-        𝐖𝐡𝐚𝐭 𝐗𝐚𝐧𝐭𝐚𝐠𝐞 𝐜𝐚𝐧 𝐝𝐨 𝐟𝐨𝐫 𝐲𝐨𝐮:
+       What Xantage can do for you:
 
         🔍 Assessment & Governance
         We analyze your data ecosystem to ensure quality, security, and accessibility—laying a strong foundation for every digital initiative.
@@ -134,6 +141,8 @@ prompt_dict = {
         (DM us for credit & removal)
 
         Second: Write a new post following my style, summarizing the following article.
+
+        Third: Before delivering your answer, revise the output and remove all Markdown characters like **.
         """
     ),
     ("LinkedIn", "Carousel"): (
@@ -315,6 +324,8 @@ prompt_dict = {
 
         Second: Write the text for a new carousel post following my style, that captures the following article.
         You can decide on the number of slides and text: I'll provide the images and graphics, don't worry.
+
+        Third: Before delivering your answer, revise the output and remove all Markdown characters like **.        
         """
     ),
     ("LinkedIn", "Commercial post"): (
@@ -358,6 +369,8 @@ prompt_dict = {
         • By leveraging the power of data mesh, you can create a data-driven ecosystem that empowers teams to take ownership of specific data products, enabling faster innovation and flexibility."
         
         Second, write a persuasive post that takes inspiration from the following article and includes a strong call-to-action, defining how Xantage can help.
+        
+        Third: Before delivering your answer, revise the output and remove all Markdown characters like **.
         """
     ),
     ("LinkedIn", "Erik's self branding"): (
@@ -454,6 +467,8 @@ prompt_dict = {
         (DM us for credit & removal)
 
         Third: Write a new post following Erik's style, summarizi the following article in a unique, authentic, and insightful manner that reflects Erik's expertise.
+        
+        Fourth: Before delivering your answer, revise the output and remove all Markdown characters like **.
         """
     )
 }
