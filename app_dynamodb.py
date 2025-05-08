@@ -94,26 +94,76 @@ def get_all_articles():
     
     return articles
 
-def display_recent_update():
-    try:
-        # Scan the entire table to get all items
-        response = table.scan()
-        articles = response.get('Items', [])
+# def display_recent_update():
+#     try:
+#         # Scan the entire table to get all items
+#         response = table.scan()
+#         articles = response.get('Items', [])
         
-        if articles:
-            df_inspect = pd.DataFrame(articles)
-            # Convert the "timestamp" field to datetime
-            df_inspect["timestamp_parsed"] = pd.to_datetime(df_inspect["timestamp"], errors="coerce")
-            most_recent = df_inspect["timestamp_parsed"].max()
+#         if articles:
+#             df_inspect = pd.DataFrame(articles)
+#             # Convert the "timestamp" field to datetime
+#             df_inspect["timestamp_parsed"] = pd.to_datetime(df_inspect["timestamp"], errors="coerce")
+#             most_recent = df_inspect["timestamp_parsed"].max()
             
-            if pd.notnull(most_recent):
-                st.write(f"Most Recent Article Released On: {most_recent.strftime('%Y-%m-%d %H:%M:%S')}")
+#             if pd.notnull(most_recent):
+#                 st.write(f"Most Recent Article Released On: {most_recent.strftime('%Y-%m-%d %H:%M:%S')}")
+#             else:
+#                 st.write("Could not parse timestamps.")
+#         else:
+#             st.write("No articles found in DynamoDB.")
+#     except Exception as e:
+#         st.error(f"Error fetching recent update: {e}")
+def display_recent_update():
+    """Display the most recent article's timestamp with proper pagination."""
+    try:
+        # Initialize variables to track the most recent timestamp
+        most_recent_article = None
+        most_recent_timestamp = None
+        
+        # Use pagination to scan through all items
+        last_evaluated_key = None
+        while True:
+            # Perform scan with pagination
+            if last_evaluated_key:
+                response = table.scan(ExclusiveStartKey=last_evaluated_key)
             else:
-                st.write("Could not parse timestamps.")
+                response = table.scan()
+            
+            articles = response.get('Items', [])
+            
+            # Process this batch of articles
+            if articles:
+                for article in articles:
+                    if 'timestamp' in article:
+                        # Parse the timestamp
+                        try:
+                            article_timestamp = pd.to_datetime(article['timestamp'])
+                            
+                            # Check if this is the most recent
+                            if most_recent_timestamp is None or article_timestamp > most_recent_timestamp:
+                                most_recent_timestamp = article_timestamp
+                                most_recent_article = article
+                        except:
+                            # Skip articles with unparseable timestamps
+                            continue
+            
+            # Check if there are more items to scan
+            last_evaluated_key = response.get('LastEvaluatedKey')
+            if not last_evaluated_key:
+                break
+        
+        # Display the most recent article information
+        if most_recent_timestamp:
+            st.write(f"Most Recent Article Released On: {most_recent_timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+            st.write(f"Title: {most_recent_article.get('Title', 'Unknown Title')}")
+            st.write(f"Source: {most_recent_article.get('source', 'Unknown Source')}")
         else:
-            st.write("No articles found in DynamoDB.")
+            st.write("No articles found with valid timestamps.")
+    
     except Exception as e:
         st.error(f"Error fetching recent update: {e}")
+        st.error(f"Details: {traceback.format_exc()}")
 
 def get_article_text(url):
     """Fetches the full article text from the URL by parsing HTML paragraphs."""
@@ -299,6 +349,55 @@ def get_all_feeds():
 # ---------------------------
 # DATABASE MANAGEMENT SECTION
 # ---------------------------
+# def database_management_section():
+#     st.markdown("### Database Inspection")
+    
+#     # Count documents in DynamoDB with pagination
+#     articles = get_all_articles()
+#     count = len(articles)
+#     st.write(f"Total documents in DynamoDB: {count}")
+    
+#     display_recent_update()
+#     if "last_updated" in st.session_state:
+#         st.write(f"Last updated: {st.session_state.last_updated}")
+    
+#     # Load RSS feeds if not already loaded
+#     if "rss_df" not in st.session_state:
+#         st.session_state.rss_df = get_all_feeds()
+    
+#     df = st.session_state.rss_df
+
+#     if st.button("Search for Updates"):
+#         with st.spinner("Processing articles..."):
+#             knowledge_base = []
+#             for idx, row in df.iterrows():
+#                 # Check if the article already exists in DynamoDB
+#                 existing_response = table.scan(
+#                     FilterExpression=Attr('Title').eq(row["Title"]) & 
+#                                      Attr('timestamp').eq(row["Date Created"])
+#                 )
+                
+#                 if existing_response['Count'] > 0:
+#                     continue  # Skip processing duplicates
+                
+#                 processed = process_article(row)
+#                 if processed:
+#                     knowledge_base.append(processed)
+            
+#             st.session_state.knowledge_base = knowledge_base
+#             st.success(f"Knowledge Base updated with {len(knowledge_base)} new articles.")
+    
+#     if "knowledge_base" in st.session_state and st.session_state.knowledge_base:
+#         st.markdown("### Updates Overview")
+#         knowledge_df = pd.DataFrame(st.session_state.knowledge_base)
+#         st.dataframe(knowledge_df)
+        
+#         if st.button("Save Updates to DynamoDB"):
+#             persist_knowledge_base_dynamodb(st.session_state.knowledge_base)
+    
+#     else:
+#         st.error("No knowledge base to persist.")
+### Separating operations: check for updates and ranking ###
 def database_management_section():
     st.markdown("### Database Inspection")
     
@@ -317,9 +416,12 @@ def database_management_section():
     
     df = st.session_state.rss_df
 
-    if st.button("Search for Updates"):
-        with st.spinner("Processing articles..."):
-            knowledge_base = []
+    if st.button("Check for New Articles"):
+        with st.spinner("Checking feeds for new articles..."):
+            # Initialize list to store new articles (metadata only, no processing yet)
+            new_articles = []
+            
+            # Check each article in the RSS feed against the database
             for idx, row in df.iterrows():
                 # Check if the article already exists in DynamoDB
                 existing_response = table.scan(
@@ -327,26 +429,49 @@ def database_management_section():
                                      Attr('timestamp').eq(row["Date Created"])
                 )
                 
-                if existing_response['Count'] > 0:
-                    continue  # Skip processing duplicates
-                
-                processed = process_article(row)
-                if processed:
-                    knowledge_base.append(processed)
+                # If article doesn't exist, add to the new articles list
+                if existing_response['Count'] == 0:
+                    new_articles.append(row)
             
-            st.session_state.knowledge_base = knowledge_base
-            st.success(f"Knowledge Base updated with {len(knowledge_base)} new articles.")
+            # Store the new articles in session state for later processing
+            st.session_state.new_articles = new_articles
+            
+            # Show a success message with the count
+            if new_articles:
+                st.success(f"Found {len(new_articles)} new articles! Click 'Process and Save' to analyze them.")
+            else:
+                st.info("No new articles found.")
     
-    if "knowledge_base" in st.session_state and st.session_state.knowledge_base:
-        st.markdown("### Updates Overview")
-        knowledge_df = pd.DataFrame(st.session_state.knowledge_base)
-        st.dataframe(knowledge_df)
-        
-        if st.button("Save Updates to DynamoDB"):
-            persist_knowledge_base_dynamodb(st.session_state.knowledge_base)
-    
-    else:
-        st.error("No knowledge base to persist.")
+    # Only show the Process and Save button if new articles have been found
+    if "new_articles" in st.session_state and st.session_state.new_articles:
+        if st.button("Process and Save Articles"):
+            with st.spinner("Processing articles with AI..."):
+                knowledge_base = []
+                
+                # Process each new article
+                for row in st.session_state.new_articles:
+                    processed = process_article(row)
+                    if processed:
+                        knowledge_base.append(processed)
+                
+                st.session_state.knowledge_base = knowledge_base
+                
+                # Show success message
+                if knowledge_base:
+                    st.success(f"Successfully processed {len(knowledge_base)} articles.")
+                    
+                    # Display the processed articles
+                    st.markdown("### Processed Articles")
+                    knowledge_df = pd.DataFrame(knowledge_base)
+                    st.dataframe(knowledge_df)
+                    
+                    # Save button
+                    if st.button("Save to Database"):
+                        persist_knowledge_base_dynamodb(knowledge_base)
+                        # Clear the new articles list after saving
+                        st.session_state.new_articles = []
+                else:
+                    st.error("Failed to process any articles.")
 
 
 def content_creation_section():
