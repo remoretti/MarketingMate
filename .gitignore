@@ -3,3 +3,7 @@ global-bundle.pem
 linkedin.py
 *__pycache__
 app_mongo_2.py
+app_dynamodb_backup.py
+date_utils_backup.py
+rss_feed_analysis_20250522_163344.json
+rss_feed_summary_20250522_163344.csv
