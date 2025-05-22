@@ -37,7 +37,6 @@ def verify_aws_credentials():
         st.error(f"Full Error Details: {traceback.format_exc()}")
         return False
 
-#st.set_page_config(layout="wide")
 
 # Load environment variables
 load_dotenv()  # Loads variables from .env into os.environ
@@ -94,26 +93,6 @@ def get_all_articles():
     
     return articles
 
-# def display_recent_update():
-#     try:
-#         # Scan the entire table to get all items
-#         response = table.scan()
-#         articles = response.get('Items', [])
-        
-#         if articles:
-#             df_inspect = pd.DataFrame(articles)
-#             # Convert the "timestamp" field to datetime
-#             df_inspect["timestamp_parsed"] = pd.to_datetime(df_inspect["timestamp"], errors="coerce")
-#             most_recent = df_inspect["timestamp_parsed"].max()
-            
-#             if pd.notnull(most_recent):
-#                 st.write(f"Most Recent Article Released On: {most_recent.strftime('%Y-%m-%d %H:%M:%S')}")
-#             else:
-#                 st.write("Could not parse timestamps.")
-#         else:
-#             st.write("No articles found in DynamoDB.")
-#     except Exception as e:
-#         st.error(f"Error fetching recent update: {e}")
 def display_recent_update():
     """Display the most recent article's timestamp with proper pagination."""
     try:
@@ -249,51 +228,397 @@ agent = workflow.compile()
 
 
 def process_article(row):
-    article_url = row["URL"]
-    article_text = get_article_text(article_url)
-    if not article_text:
-        return None  # Skip if content retrieval fails.
+    try:
+        article_url = row["URL"]
+        
+        # Validate URL
+        if not article_url or article_url == 'No URL':
+            st.error(f"Invalid URL for article: {row.get('Title', 'Unknown')}")
+            return None
+        
+        article_text = get_article_text(article_url)
+        if not article_text:
+            st.warning(f"No content retrieved for: {row.get('Title', 'Unknown')}")
+            return None  # Skip if content retrieval fails.
+        
+        # Use the standardized date that's already been processed in fetch_feed
+        timestamp = row["Date Created"]
+        
+        state_input: ArticleState = {
+            "text": article_text,
+            "ranking": {},
+            "timestamp": timestamp,
+            "summary": row["Summary"],
+            "source": row["RSS Source"]
+        }
+        
+        # Process with LangGraph agent
+        result_state = agent.invoke(state_input)
+        
+        # Validate that we have a result
+        if not result_state:
+            st.error(f"LangGraph agent returned empty result for: {row.get('Title', 'Unknown')}")
+            return None
+        
+        # Add the URL and Title for later persistence.
+        result_state["url"] = article_url
+        result_state["Title"] = row["Title"]  # Ensure the Title field is stored.
+        
+        # Transform the ranking into separate properties.
+        ranking = result_state.get("ranking", {})
+        if isinstance(ranking, str):
+            try:
+                ranking = json.loads(ranking)
+            except Exception as e:
+                st.warning(f"Failed to parse ranking JSON for {row.get('Title', 'Unknown')}: {e}")
+                ranking = {}
+        
+        # Ensure ranking values are integers
+        result_state["digital_transformation"] = int(ranking.get("Digital Transformation", 0))
+        result_state["generative_ai"] = int(ranking.get("Generative AI", 0))
+        result_state["machine_learning"] = int(ranking.get("Machine Learning / Data Science", 0))
+        result_state["finance_in_tech"] = int(ranking.get("Finance in tech", 0))
+        
+        # Validate final result
+        required_fields = ["url", "Title", "timestamp", "source", "text"]
+        for field in required_fields:
+            if field not in result_state or result_state[field] is None:
+                st.error(f"Missing required field '{field}' for article: {row.get('Title', 'Unknown')}")
+                return None
+        
+        return result_state
+        
+    except Exception as e:
+        st.error(f"Error processing article '{row.get('Title', 'Unknown')}': {e}")
+        st.error(f"Error details: {traceback.format_exc()}")
+        return None
+
+
+def debug_dynamodb_connection():
+    """Debug function to test DynamoDB connection and table access."""
+    st.write("🔍 Debugging DynamoDB Connection...")
     
-    # Use the standardized date that's already been processed in fetch_feed
-    timestamp = row["Date Created"]
-    
-    state_input: ArticleState = {
-        "text": article_text,
-        "ranking": {},
-        "timestamp": timestamp,
-        "summary": row["Summary"],
-        "source": row["RSS Source"]
-    }
-    result_state = agent.invoke(state_input)
-    # Add the URL and Title for later persistence.
-    result_state["url"] = article_url
-    result_state["Title"] = row["Title"]  # Ensure the Title field is stored.
-    
-    # Transform the ranking into separate properties.
-    ranking = result_state.get("ranking", {})
-    if isinstance(ranking, str):
+    try:
+        # Test basic table access using the client, not the table resource
+        dynamodb_client = boto3.client(
+            'dynamodb', 
+            region_name=os.getenv('AWS_DEFAULT_REGION', 'us-east-1'),
+            aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+            aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY')
+        )
+        
+        # Get table description using client
+        response = dynamodb_client.describe_table(TableName='MarketingMateDB')
+        st.success("✅ Successfully connected to DynamoDB table")
+        st.write(f"Table Name: {response['Table']['TableName']}")
+        st.write(f"Table Status: {response['Table']['TableStatus']}")
+        st.write(f"Item Count: {response['Table']['ItemCount']}")
+        
+        # Test read permissions with table resource
+        st.write("🔍 Testing read permissions...")
+        scan_response = table.scan(Limit=1)
+        st.success(f"✅ Read test successful - found {scan_response['Count']} items")
+        
+        # Test write permissions by writing a simple test item
+        st.write("🔍 Testing write permissions...")
+        test_item = {
+            'url': f'test-url-{int(datetime.utcnow().timestamp())}',
+            'Title': 'Test Article for Debug',
+            'timestamp': datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+            'source': 'Debug Test',
+            'text': 'Test text content for debugging',
+            'digital_transformation': 5,
+            'generative_ai': 3,
+            'machine_learning': 2,
+            'finance_in_tech': 1,
+            'summary': 'Test summary'
+        }
+        
+        # Try to write test item
+        table.put_item(Item=test_item)
+        st.success("✅ Successfully wrote test item to DynamoDB")
+        
+        # Try to read it back
+        get_response = table.get_item(Key={'url': test_item['url']})
+        if 'Item' in get_response:
+            st.success("✅ Successfully read test item back from DynamoDB")
+            
+            # Clean up test item
+            table.delete_item(Key={'url': test_item['url']})
+            st.success("✅ Successfully deleted test item")
+            
+            # Final verification
+            get_response_after_delete = table.get_item(Key={'url': test_item['url']})
+            if 'Item' not in get_response_after_delete:
+                st.success("✅ Test item successfully removed - all operations working!")
+            else:
+                st.warning("⚠️ Test item still exists after deletion attempt")
+        else:
+            st.error("❌ Could not read test item back from database")
+            
+    except Exception as e:
+        st.error(f"❌ DynamoDB connection error: {e}")
+        st.error(f"Full error: {traceback.format_exc()}")
+        
+        # Additional AWS credentials debugging
+        st.write("🔍 Checking AWS credentials...")
         try:
-            ranking = json.loads(ranking)
-        except Exception as e:
-            ranking = {}
-    result_state["digital_transformation"] = ranking.get("Digital Transformation", 0)
-    result_state["generative_ai"] = ranking.get("Generative AI", 0)
-    result_state["machine_learning"] = ranking.get("Machine Learning / Data Science", 0)
-    result_state["finance_in_tech"] = ranking.get("Finance in tech", 0)
-    return result_state
+            sts_client = boto3.client('sts',
+                region_name=os.getenv('AWS_DEFAULT_REGION', 'us-east-1'),
+                aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+                aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY')
+            )
+            identity = sts_client.get_caller_identity()
+            st.write(f"AWS Account: {identity.get('Account', 'Unknown')}")
+            st.write(f"AWS User/Role: {identity.get('Arn', 'Unknown')}")
+        except Exception as cred_error:
+            st.error(f"AWS Credentials Error: {cred_error}")
+
+# Also add this simpler connection test
+def test_simple_write():
+    """Simple write test to isolate the issue."""
+    st.write("🔍 Testing Simple Write Operation...")
+    
+    try:
+        # Create a very simple test item
+        simple_item = {
+            'url': 'simple-test-123',
+            'Title': 'Simple Test'
+        }
+        
+        # Test put_item
+        table.put_item(Item=simple_item)
+        st.success("✅ Simple write successful")
+        
+        # Test get_item
+        response = table.get_item(Key={'url': 'simple-test-123'})
+        if 'Item' in response:
+            st.success("✅ Simple read successful")
+            
+            # Clean up
+            table.delete_item(Key={'url': 'simple-test-123'})
+            st.success("✅ Simple delete successful")
+        else:
+            st.error("❌ Simple read failed")
+            
+    except Exception as e:
+        st.error(f"❌ Simple write test failed: {e}")
+        st.error(f"Error type: {type(e).__name__}")
+        st.error(f"Full error: {traceback.format_exc()}")
+
+def debug_article_save(knowledge_base):
+    """Debug the actual article saving process."""
+    st.write("🔍 Debugging Article Save Process...")
+    
+    if not knowledge_base:
+        st.error("No knowledge base provided for debugging")
+        return
+    
+    st.write(f"📊 Articles to save: {len(knowledge_base)}")
+    
+    # Debug first article structure
+    first_article = knowledge_base[0]
+    st.write("🔍 First article structure:")
+    st.json(first_article)
+    
+    # Check for problematic data types
+    st.write("🔍 Checking data types in first article:")
+    for key, value in first_article.items():
+        value_type = type(value).__name__
+        st.write(f"- {key}: {value_type}")
+        
+        # Check for problematic types
+        if value_type in ['dict', 'list', 'NoneType']:
+            st.warning(f"⚠️ Potential issue: {key} has type {value_type}")
+            st.write(f"  Value: {value}")
+    
+    # Test saving just the first article
+    st.write("🔍 Testing save of first article only...")
+    try:
+        # Clean the article
+        cleaned_article = {}
+        for key, value in first_article.items():
+            if value is not None:
+                if isinstance(value, dict):
+                    cleaned_article[key] = json.dumps(value)
+                elif isinstance(value, list):
+                    cleaned_article[key] = json.dumps(value)
+                else:
+                    cleaned_article[key] = str(value) if not isinstance(value, (int, float, bool, str)) else value
+            else:
+                st.warning(f"Skipping None value for key: {key}")
+        
+        # Add TTL
+        cleaned_article['ttl'] = int(datetime.utcnow().timestamp()) + (180 * 24 * 60 * 60)
+        
+        st.write("🔍 Cleaned article structure:")
+        st.json(cleaned_article)
+        
+        # Try to save
+        table.put_item(Item=cleaned_article)
+        st.success("✅ First article saved successfully!")
+        
+        # Verify it exists
+        url_to_check = cleaned_article['url']
+        get_response = table.get_item(Key={'url': url_to_check})
+        if 'Item' in get_response:
+            st.success("✅ First article verified in database!")
+            
+            # Check total count after save
+            articles = get_all_articles()
+            new_count = len(articles)
+            st.write(f"📊 Total articles after test save: {new_count}")
+            
+        else:
+            st.error("❌ First article not found after save")
+            
+    except Exception as e:
+        st.error(f"❌ Failed to save first article: {e}")
+        st.error(f"Error type: {type(e).__name__}")
+        st.error(f"Full error: {traceback.format_exc()}")
+
+def debug_batch_save(knowledge_base):
+    """Debug the batch save process specifically."""
+    st.write("🔍 Debugging Batch Save Process...")
+    
+    if not knowledge_base:
+        st.error("No knowledge base provided")
+        return
+    
+    try:
+        st.write(f"📊 Attempting to save {len(knowledge_base)} articles using batch writer...")
+        
+        with table.batch_writer() as batch:
+            for i, article in enumerate(knowledge_base):
+                try:
+                    # Clean the article data
+                    cleaned_article = {}
+                    for key, value in article.items():
+                        if value is not None:
+                            if isinstance(value, dict):
+                                cleaned_article[key] = json.dumps(value)
+                            elif isinstance(value, list):
+                                cleaned_article[key] = json.dumps(value)
+                            else:
+                                cleaned_article[key] = str(value) if not isinstance(value, (int, float, bool, str)) else value
+                    
+                    # Add TTL
+                    cleaned_article['ttl'] = int(datetime.utcnow().timestamp()) + (180 * 24 * 60 * 60)
+                    
+                    # Add to batch
+                    batch.put_item(Item=cleaned_article)
+                    
+                    if i < 3:  # Show progress for first 3
+                        st.write(f"✅ Added article {i+1} to batch: {cleaned_article.get('Title', 'Unknown')}")
+                
+                except Exception as item_error:
+                    st.error(f"❌ Error adding article {i+1} to batch: {item_error}")
+        
+        st.success("✅ Batch write completed!")
+        
+        # Verify by checking count
+        articles = get_all_articles()
+        new_count = len(articles)
+        st.write(f"📊 Total articles after batch save: {new_count}")
+        
+    except Exception as e:
+        st.error(f"❌ Batch save failed: {e}")
+        st.error(f"Full error: {traceback.format_exc()}")
+
+# Add this simple save test
+def test_save_processed_articles():
+    """Test saving the currently processed articles."""
+    if 'knowledge_base' not in st.session_state or not st.session_state.knowledge_base:
+        st.error("No processed articles found in session state")
+        return
+    
+    knowledge_base = st.session_state.knowledge_base
+    st.write(f"🔍 Found {len(knowledge_base)} processed articles in session state")
+    
+    # Show first few article titles
+    st.write("📝 Article titles:")
+    for i, article in enumerate(knowledge_base[:5]):
+        st.write(f"{i+1}. {article.get('Title', 'No Title')}")
+    
+    if len(knowledge_base) > 5:
+        st.write(f"... and {len(knowledge_base) - 5} more")
+    
+    # Debug first article
+    debug_article_save(knowledge_base)
+    
+    # Test batch save
+    if st.button("🔄 Try Batch Save"):
+        debug_batch_save(knowledge_base)
+
 
 def persist_knowledge_base_dynamodb(knowledge_base):
-    if knowledge_base:
-        with table.batch_writer() as batch:
-            for article in knowledge_base:
-                # Add TTL (optional) - expire after 6 months
-                article['ttl'] = int(datetime.utcnow().timestamp()) + (180 * 24 * 60 * 60)
-                batch.put_item(Item=article)
-        
-        st.session_state.last_updated = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
-        st.success("Knowledge base persisted to DynamoDB!")
-    else:
+    """Save articles to DynamoDB with proper data cleaning."""
+    if not knowledge_base:
         st.error("No knowledge base to persist.")
+        return False
+    
+    st.info(f"Saving {len(knowledge_base)} articles to DynamoDB...")
+    
+    try:
+        saved_count = 0
+        failed_count = 0
+        
+        # Save articles one by one (more reliable than batch for debugging)
+        for i, article in enumerate(knowledge_base):
+            try:
+                # Clean the article data - same as debug function that worked
+                cleaned_article = {}
+                for key, value in article.items():
+                    if value is not None:
+                        if isinstance(value, dict):
+                            cleaned_article[key] = json.dumps(value)
+                        elif isinstance(value, list):
+                            cleaned_article[key] = json.dumps(value)
+                        else:
+                            cleaned_article[key] = str(value) if not isinstance(value, (int, float, bool, str)) else value
+                
+                # Add TTL (optional) - expire after 6 months
+                cleaned_article['ttl'] = int(datetime.utcnow().timestamp()) + (180 * 24 * 60 * 60)
+                
+                # Save individual item
+                table.put_item(Item=cleaned_article)
+                saved_count += 1
+                
+                # Show progress for first few items
+                if i < 5:
+                    st.write(f"✅ Saved: {cleaned_article.get('Title', 'Unknown')[:50]}...")
+                elif i == 5:
+                    st.write(f"... continuing to save remaining {len(knowledge_base) - 5} articles")
+                
+            except Exception as item_error:
+                failed_count += 1
+                st.error(f"Failed to save article {i+1}: {item_error}")
+        
+        # Report results
+        if saved_count > 0:
+            st.success(f"✅ Successfully saved {saved_count} articles to DynamoDB!")
+        
+        if failed_count > 0:
+            st.warning(f"⚠️ Failed to save {failed_count} articles")
+        
+        # Update session state
+        st.session_state.last_updated = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+        
+        # Clear processed articles after successful save
+        if 'new_articles' in st.session_state:
+            del st.session_state.new_articles
+        if 'knowledge_base' in st.session_state:
+            del st.session_state.knowledge_base
+        
+        # Force refresh to show updated data
+        st.rerun()
+        
+        return saved_count > 0
+        
+    except Exception as e:
+        st.error(f"Critical error during database save: {e}")
+        st.error(f"Full error details: {traceback.format_exc()}")
+        return False
 
 def fetch_feed(feed_url, source_name):
     headers = {'User-Agent': 'Mozilla/5.0 (compatible; MyRSSReader/1.0)'}
@@ -349,55 +674,6 @@ def get_all_feeds():
 # ---------------------------
 # DATABASE MANAGEMENT SECTION
 # ---------------------------
-# def database_management_section():
-#     st.markdown("### Database Inspection")
-    
-#     # Count documents in DynamoDB with pagination
-#     articles = get_all_articles()
-#     count = len(articles)
-#     st.write(f"Total documents in DynamoDB: {count}")
-    
-#     display_recent_update()
-#     if "last_updated" in st.session_state:
-#         st.write(f"Last updated: {st.session_state.last_updated}")
-    
-#     # Load RSS feeds if not already loaded
-#     if "rss_df" not in st.session_state:
-#         st.session_state.rss_df = get_all_feeds()
-    
-#     df = st.session_state.rss_df
-
-#     if st.button("Search for Updates"):
-#         with st.spinner("Processing articles..."):
-#             knowledge_base = []
-#             for idx, row in df.iterrows():
-#                 # Check if the article already exists in DynamoDB
-#                 existing_response = table.scan(
-#                     FilterExpression=Attr('Title').eq(row["Title"]) & 
-#                                      Attr('timestamp').eq(row["Date Created"])
-#                 )
-                
-#                 if existing_response['Count'] > 0:
-#                     continue  # Skip processing duplicates
-                
-#                 processed = process_article(row)
-#                 if processed:
-#                     knowledge_base.append(processed)
-            
-#             st.session_state.knowledge_base = knowledge_base
-#             st.success(f"Knowledge Base updated with {len(knowledge_base)} new articles.")
-    
-#     if "knowledge_base" in st.session_state and st.session_state.knowledge_base:
-#         st.markdown("### Updates Overview")
-#         knowledge_df = pd.DataFrame(st.session_state.knowledge_base)
-#         st.dataframe(knowledge_df)
-        
-#         if st.button("Save Updates to DynamoDB"):
-#             persist_knowledge_base_dynamodb(st.session_state.knowledge_base)
-    
-#     else:
-#         st.error("No knowledge base to persist.")
-### Separating operations: check for updates and ranking ###
 def database_management_section():
     st.markdown("### Database Inspection")
     
@@ -423,15 +699,22 @@ def database_management_section():
             
             # Check each article in the RSS feed against the database
             for idx, row in df.iterrows():
-                # Check if the article already exists in DynamoDB
-                existing_response = table.scan(
-                    FilterExpression=Attr('Title').eq(row["Title"]) & 
-                                     Attr('timestamp').eq(row["Date Created"])
-                )
+                article_url = row["URL"]
                 
-                # If article doesn't exist, add to the new articles list
-                if existing_response['Count'] == 0:
-                    new_articles.append(row)
+                # Check if the article already exists in DynamoDB using the primary key (url)
+                try:
+                    existing_response = table.get_item(Key={'url': article_url})
+                    
+                    # If article doesn't exist, add to the new articles list
+                    if 'Item' not in existing_response:
+                        new_articles.append(row)
+                    else:
+                        # Article exists, skip it
+                        continue
+                        
+                except Exception as e:
+                    st.error(f"Error checking for existing article {article_url}: {e}")
+                    continue
             
             # Store the new articles in session state for later processing
             st.session_state.new_articles = new_articles
@@ -439,10 +722,17 @@ def database_management_section():
             # Show a success message with the count
             if new_articles:
                 st.success(f"Found {len(new_articles)} new articles! Click 'Process and Save' to analyze them.")
+                
+                # Debug: Show sample URLs of new articles
+                st.write("Sample new article URLs:")
+                for i, article in enumerate(new_articles[:5]):  # Show first 5
+                    st.write(f"{i+1}. {article['URL']}")
+                if len(new_articles) > 5:
+                    st.write(f"... and {len(new_articles) - 5} more")
             else:
                 st.info("No new articles found.")
     
-    # Only show the Process and Save button if new articles have been found
+    # FIXED: Move this outside the button - only show if new articles exist
     if "new_articles" in st.session_state and st.session_state.new_articles:
         if st.button("Process and Save Articles"):
             with st.spinner("Processing articles with AI..."):
@@ -459,19 +749,32 @@ def database_management_section():
                 # Show success message
                 if knowledge_base:
                     st.success(f"Successfully processed {len(knowledge_base)} articles.")
-                    
-                    # Display the processed articles
-                    st.markdown("### Processed Articles")
-                    knowledge_df = pd.DataFrame(knowledge_base)
-                    st.dataframe(knowledge_df)
-                    
-                    # Save button
-                    if st.button("Save to Database"):
-                        persist_knowledge_base_dynamodb(knowledge_base)
-                        # Clear the new articles list after saving
-                        st.session_state.new_articles = []
                 else:
                     st.error("Failed to process any articles.")
+
+    # FIXED: Separate section for processed articles - based on session state, not nested buttons
+    if "knowledge_base" in st.session_state and st.session_state.knowledge_base:
+        st.markdown("### Processed Articles")
+        knowledge_df = pd.DataFrame(st.session_state.knowledge_base)
+        st.dataframe(knowledge_df)
+        
+        # FIXED: This button is now independent and will work properly
+        if st.button("Save to Database"):
+            persist_knowledge_base_dynamodb(st.session_state.knowledge_base)
+
+    # # Debug section
+    # if "knowledge_base" in st.session_state and st.session_state.knowledge_base:
+    #     st.markdown("### Debug Processed Articles")
+        
+    #     col_debug1, col_debug2 = st.columns(2)
+        
+    #     with col_debug1:
+    #         if st.button("🔍 Debug Article Structure"):
+    #             debug_article_save(st.session_state.knowledge_base)
+        
+    #     with col_debug2:
+    #         if st.button("🧪 Test Article Save"):
+    #             test_save_processed_articles()
 
 
 def content_creation_section():
