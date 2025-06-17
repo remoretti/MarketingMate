@@ -758,11 +758,96 @@ def fetch_feed(feed_url, source_name):
     except Exception as e:
         raise Exception(f"Parsing failed: {e}")
 
-@st.cache_data(show_spinner=False)
+# @st.cache_data(show_spinner=False)
+# def get_all_feeds():
+#     """
+#     Production-ready feed sources - all verified working as of May 22, 2025.
+#     Total: 12 reliable feeds providing ~700+ articles
+#     """
+#     all_entries = []
+    
+#     # TIER 1: Premium AI/Tech News (High frequency, high quality)
+#     tier1_feeds = {
+#         "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml": "The Verge AI",
+#         "https://deepmind.com/blog/feed/basic/": "Google DeepMind", 
+#         "https://www.blog.google/technology/ai/rss/": "Google AI Blog",
+#         "https://openai.com/news/rss.xml": "OpenAI News",
+#         "https://techcrunch.com/feed/": "TechCrunch",
+#         "http://www.guardian.co.uk/technology/artificialintelligenceai/rss": "The Guardian AI"
+#     }
+    
+#     # TIER 2: Business & Academic Sources (Lower frequency, higher depth)
+#     tier2_feeds = {
+#         "http://feeds.harvardbusiness.org/harvardbusiness/": "Harvard Business Review",
+#         "http://feeds.feedburner.com/mitsmr": "MIT Sloan Management Review",
+#         "https://www.technologyreview.com/feed/": "MIT Technology Review",
+#         "http://www.sciencedaily.com/rss/computers_math/artificial_intelligence.xml": "ScienceDaily AI"
+#     }
+    
+#     # TIER 3: General Tech (Mixed content, use relevance filters)
+#     tier3_feeds = {
+#         "https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml": "New York Times Technology",
+#         "http://venturebeat.com/feed/": "VentureBeat"
+#     }
+    
+#     # Process all feeds with detailed logging
+#     all_feed_sources = {**tier1_feeds, **tier2_feeds, **tier3_feeds}
+    
+#     successful_feeds = 0
+#     failed_feeds = 0
+    
+#     print(f"🔄 Starting RSS feed collection from {len(all_feed_sources)} sources...")
+    
+#     for url, source_name in all_feed_sources.items():
+#         try:
+#             entries = fetch_feed(url, source_name)
+#             if entries:  # Only add if we got entries
+#                 all_entries.extend(entries)
+#                 successful_feeds += 1
+#                 print(f"✅ {source_name}: {len(entries)} entries")
+#             else:
+#                 print(f"⚠️ {source_name}: No entries found")
+#                 failed_feeds += 1
+#         except Exception as e:
+#             print(f"❌ {source_name}: {str(e)}")
+#             failed_feeds += 1
+#             continue
+    
+#     print(f"\n📊 Feed Collection Summary:")
+#     print(f"   ✅ Successful: {successful_feeds}")
+#     print(f"   ❌ Failed: {failed_feeds}")
+#     print(f"   📄 Total articles fetched: {len(all_entries)}")
+    
+#     # Convert to DataFrame and process
+#     df = pd.DataFrame(all_entries)
+#     if not df.empty:
+#         df = df[["RSS Source", "Title", "URL", "Summary", "Date Created"]]
+        
+#         # Sort by date (most recent first)
+#         try:
+#             df['Date Created'] = pd.to_datetime(df['Date Created'], errors='coerce')
+#             df = df.sort_values('Date Created', ascending=False)
+#             df['Date Created'] = df['Date Created'].dt.strftime('%Y-%m-%dT%H:%M:%SZ')
+#         except Exception as e:
+#             print(f"⚠️ Date sorting error: {e}")
+        
+#         # Remove duplicates by URL (in case feeds overlap)
+#         original_count = len(df)
+#         df = df.drop_duplicates(subset=['URL'], keep='first')
+#         if len(df) < original_count:
+#             print(f"🔄 Removed {original_count - len(df)} duplicate articles")
+        
+#         print(f"📄 Final article count: {len(df)} unique articles")
+#     else:
+#         print("❌ No articles retrieved from any feed")
+    
+#     return df
+@st.cache_data(show_spinner=False, ttl=3600)  # Cache expires after 1 hour (3600 seconds)
 def get_all_feeds():
     """
     Production-ready feed sources - all verified working as of May 22, 2025.
     Total: 12 reliable feeds providing ~700+ articles
+    NOTE: Cache expires every hour to ensure fresh data
     """
     all_entries = []
     
@@ -796,7 +881,11 @@ def get_all_feeds():
     successful_feeds = 0
     failed_feeds = 0
     
-    print(f"🔄 Starting RSS feed collection from {len(all_feed_sources)} sources...")
+    # Enhanced logging to show when fresh data is being fetched
+    current_time = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')
+    print(f"🔄 FRESH RSS FEED FETCH - Starting collection from {len(all_feed_sources)} sources...")
+    print(f"🕐 Fetch time: {current_time}")
+    print(f"💾 Cache TTL: 1 hour - Next refresh after: {(datetime.utcnow() + timedelta(hours=1)).strftime('%Y-%m-%d %H:%M:%S UTC')}")
     
     for url, source_name in all_feed_sources.items():
         try:
@@ -813,7 +902,7 @@ def get_all_feeds():
             failed_feeds += 1
             continue
     
-    print(f"\n📊 Feed Collection Summary:")
+    print(f"\n📊 Fresh Feed Collection Summary:")
     print(f"   ✅ Successful: {successful_feeds}")
     print(f"   ❌ Failed: {failed_feeds}")
     print(f"   📄 Total articles fetched: {len(all_entries)}")
@@ -838,8 +927,36 @@ def get_all_feeds():
             print(f"🔄 Removed {original_count - len(df)} duplicate articles")
         
         print(f"📄 Final article count: {len(df)} unique articles")
+        
+        # Enhanced date range analysis
+        if not df.empty:
+            try:
+                df_dates = pd.to_datetime(df['Date Created'], errors='coerce')
+                df_dates = df_dates.dropna()
+                if not df_dates.empty:
+                    newest = df_dates.max()
+                    oldest = df_dates.min()
+                    days_since_newest = (pd.Timestamp.utcnow() - newest).days
+                    
+                    print(f"📅 Article date range:")
+                    print(f"   📈 Newest: {newest.strftime('%Y-%m-%d %H:%M:%S')} ({days_since_newest} days ago)")
+                    print(f"   📉 Oldest: {oldest.strftime('%Y-%m-%d %H:%M:%S')}")
+                    
+                    # Count recent articles
+                    recent_cutoff = pd.Timestamp.utcnow() - pd.Timedelta(days=7)
+                    recent_count = len(df_dates[df_dates >= recent_cutoff])
+                    print(f"   🔥 Articles from last 7 days: {recent_count}")
+                    
+                    # Warning if no recent articles
+                    if days_since_newest > 7:
+                        print(f"   ⚠️ WARNING: Newest article is {days_since_newest} days old!")
+                    else:
+                        print(f"   ✅ Fresh content available!")
+                        
+            except Exception as e:
+                print(f"⚠️ Date range analysis error: {e}")
     else:
-        print("❌ No articles retrieved from any feed")
+        print("❌ No articles retrieved from any feeds")
     
     return df
 
@@ -904,16 +1021,102 @@ def database_management_section():
     #         else:
     #             st.info("No new articles found.")
     # Load RSS feeds if not already loaded
+    # if "rss_df" not in st.session_state:
+    #     st.session_state.rss_df = get_all_feeds()
+    
+    # df = st.session_state.rss_df
+
+    # # Add date filtering controls
+    # st.markdown("#### Article Processing Controls")
+    
+    # col1, col2 = st.columns([2, 1])
+    
+    # with col1:
+    #     days_filter = st.selectbox(
+    #         "Process articles from:",
+    #         [1, 3, 7, 14, 30],
+    #         index=2,  # Default to 7 days
+    #         format_func=lambda x: f"Last {x} day{'s' if x > 1 else ''}"
+    #     )
+    
+    # with col2:
+    #     st.metric("Cost Impact", f"~{days_filter * 5}-{days_filter * 15} articles")
+
+    # if st.button("Check for New Articles"):
+    #     with st.spinner("Checking feeds for new articles..."):
+    #         # Initialize list to store new articles (metadata only, no processing yet)
+    #         new_articles = []
+            
+    #         # Check each article in the RSS feed against the database
+    #         for idx, row in df.iterrows():
+    #             article_url = row["URL"]
+                
+    #             # Check if the article already exists in DynamoDB using the primary key (url)
+    #             try:
+    #                 existing_response = table.get_item(Key={'url': article_url})
+                    
+    #                 # If article doesn't exist, add to the new articles list
+    #                 if 'Item' not in existing_response:
+    #                     new_articles.append(row.to_dict())
+    #                 else:
+    #                     # Article exists, skip it
+    #                     continue
+                        
+    #             except Exception as e:
+    #                 st.error(f"Error checking for existing article {article_url}: {e}")
+    #                 continue
+            
+    #         # Apply date filtering BEFORE processing
+    #         if new_articles:
+    #             # Convert DataFrame rows to the format expected by filter function
+    #             articles_for_filtering = []
+    #             for article in new_articles:
+    #                 articles_for_filtering.append({
+    #                     'Date Created': article['Date Created'],
+    #                     'Title': article['Title'],
+    #                     'URL': article['URL'],
+    #                     'Summary': article['Summary'],
+    #                     'RSS Source': article['RSS Source']
+    #                 })
+                
+    #             # Apply date filter
+    #             filtered_articles = filter_articles_by_date(articles_for_filtering, days_back=days_filter)
+                
+    #             # Convert back to the format expected by the rest of the app
+    #             st.session_state.new_articles = []
+    #             for filtered_article in filtered_articles:
+    #                 # Find the original row that matches this filtered article
+    #                 for original_article in new_articles:
+    #                     if original_article['URL'] == filtered_article['URL']:
+    #                         st.session_state.new_articles.append(original_article)
+    #                         break
+                
+    #             # Show results
+    #             if st.session_state.new_articles:
+    #                 st.success(f"Found {len(st.session_state.new_articles)} recent articles (last {days_filter} days)!")
+    #                 st.info(f"💰 Cost savings: Filtered out {len(new_articles) - len(st.session_state.new_articles)} older articles")
+                    
+    #                 # Show sample of what will be processed
+    #                 if len(st.session_state.new_articles) > 0:
+    #                     st.write("📋 Recent articles to process:")
+    #                     sample_df = pd.DataFrame(st.session_state.new_articles[:5])  # Show first 5
+    #                     st.dataframe(sample_df[['RSS Source', 'Title', 'Date Created']])
+    #                     if len(st.session_state.new_articles) > 5:
+    #                         st.write(f"... and {len(st.session_state.new_articles) - 5} more recent articles")
+    #             else:
+    #                 st.info(f"No new articles found from the last {days_filter} days.")
+    #         else:
+    #             st.info("No new articles found.")
     if "rss_df" not in st.session_state:
         st.session_state.rss_df = get_all_feeds()
-    
+
     df = st.session_state.rss_df
 
     # Add date filtering controls
     st.markdown("#### Article Processing Controls")
-    
+
     col1, col2 = st.columns([2, 1])
-    
+
     with col1:
         days_filter = st.selectbox(
             "Process articles from:",
@@ -921,75 +1124,136 @@ def database_management_section():
             index=2,  # Default to 7 days
             format_func=lambda x: f"Last {x} day{'s' if x > 1 else ''}"
         )
-    
+
     with col2:
         st.metric("Cost Impact", f"~{days_filter * 5}-{days_filter * 15} articles")
 
-    if st.button("Check for New Articles"):
-        with st.spinner("Checking feeds for new articles..."):
-            # Initialize list to store new articles (metadata only, no processing yet)
-            new_articles = []
-            
-            # Check each article in the RSS feed against the database
-            for idx, row in df.iterrows():
-                article_url = row["URL"]
+    # Enhanced button section with cache control
+    col_cache, col_check = st.columns([1, 2])
+
+    with col_cache:
+        if st.button("🔄 Force Refresh RSS"):
+            # Clear the cache and session state
+            if hasattr(get_all_feeds, 'clear'):
+                get_all_feeds.clear()
+            if "rss_df" in st.session_state:
+                del st.session_state.rss_df
+            st.success("RSS cache cleared!")
+            st.info("Click 'Check for New Articles' to fetch fresh data")
+            st.rerun()
+
+    with col_check:
+        if st.button("Check for New Articles"):
+            with st.spinner("Checking feeds for new articles..."):
+                # Force reload RSS feeds if needed
+                if "rss_df" not in st.session_state:
+                    st.session_state.rss_df = get_all_feeds()
                 
-                # Check if the article already exists in DynamoDB using the primary key (url)
-                try:
-                    existing_response = table.get_item(Key={'url': article_url})
-                    
-                    # If article doesn't exist, add to the new articles list
-                    if 'Item' not in existing_response:
-                        new_articles.append(row.to_dict())
-                    else:
-                        # Article exists, skip it
-                        continue
+                df = st.session_state.rss_df
+                
+                # Show some debug info about the RSS data
+                st.write(f"📡 **RSS Data Info:**")
+                st.write(f"- Total articles in RSS feeds: {len(df)}")
+                
+                if not df.empty:
+                    # Show date range of RSS articles
+                    try:
+                        df_copy = df.copy()
+                        df_copy['Date Created'] = pd.to_datetime(df_copy['Date Created'], errors='coerce')
+                        df_copy = df_copy.dropna(subset=['Date Created'])
                         
-                except Exception as e:
-                    st.error(f"Error checking for existing article {article_url}: {e}")
-                    continue
-            
-            # Apply date filtering BEFORE processing
-            if new_articles:
-                # Convert DataFrame rows to the format expected by filter function
-                articles_for_filtering = []
-                for article in new_articles:
-                    articles_for_filtering.append({
-                        'Date Created': article['Date Created'],
-                        'Title': article['Title'],
-                        'URL': article['URL'],
-                        'Summary': article['Summary'],
-                        'RSS Source': article['RSS Source']
-                    })
+                        if not df_copy.empty:
+                            newest_rss = df_copy['Date Created'].max()
+                            oldest_rss = df_copy['Date Created'].min()
+                            days_since_newest = (pd.Timestamp.utcnow() - newest_rss).days
+                            
+                            st.write(f"- RSS date range: {oldest_rss.strftime('%Y-%m-%d')} to {newest_rss.strftime('%Y-%m-%d')}")
+                            st.write(f"- Days since newest RSS article: {days_since_newest}")
+                            
+                            if days_since_newest > 7:
+                                st.warning(f"⚠️ RSS feeds may not be updating - newest article is {days_since_newest} days old")
+                            else:
+                                st.success(f"✅ RSS feeds are current - newest article is {days_since_newest} days old")
+                    except Exception as e:
+                        st.warning(f"Could not analyze RSS dates: {e}")
                 
-                # Apply date filter
-                filtered_articles = filter_articles_by_date(articles_for_filtering, days_back=days_filter)
+                # Initialize list to store new articles (metadata only, no processing yet)
+                new_articles = []
                 
-                # Convert back to the format expected by the rest of the app
-                st.session_state.new_articles = []
-                for filtered_article in filtered_articles:
-                    # Find the original row that matches this filtered article
-                    for original_article in new_articles:
-                        if original_article['URL'] == filtered_article['URL']:
-                            st.session_state.new_articles.append(original_article)
-                            break
-                
-                # Show results
-                if st.session_state.new_articles:
-                    st.success(f"Found {len(st.session_state.new_articles)} recent articles (last {days_filter} days)!")
-                    st.info(f"💰 Cost savings: Filtered out {len(new_articles) - len(st.session_state.new_articles)} older articles")
+                # Check each article in the RSS feed against the database
+                for idx, row in df.iterrows():
+                    article_url = row["URL"]
                     
-                    # Show sample of what will be processed
-                    if len(st.session_state.new_articles) > 0:
-                        st.write("📋 Recent articles to process:")
-                        sample_df = pd.DataFrame(st.session_state.new_articles[:5])  # Show first 5
-                        st.dataframe(sample_df[['RSS Source', 'Title', 'Date Created']])
-                        if len(st.session_state.new_articles) > 5:
-                            st.write(f"... and {len(st.session_state.new_articles) - 5} more recent articles")
+                    # Check if the article already exists in DynamoDB using the primary key (url)
+                    try:
+                        existing_response = table.get_item(Key={'url': article_url})
+                        
+                        # If article doesn't exist, add to the new articles list
+                        if 'Item' not in existing_response:
+                            new_articles.append(row.to_dict())
+                        else:
+                            # Article exists, skip it
+                            continue
+                            
+                    except Exception as e:
+                        st.error(f"Error checking for existing article {article_url}: {e}")
+                        continue
+                
+                st.write(f"📊 **Database Comparison:**")
+                st.write(f"- Articles not yet in database: {len(new_articles)}")
+                
+                # Apply date filtering BEFORE processing
+                if new_articles:
+                    # Convert DataFrame rows to the format expected by filter function
+                    articles_for_filtering = []
+                    for article in new_articles:
+                        articles_for_filtering.append({
+                            'Date Created': article['Date Created'],
+                            'Title': article['Title'],
+                            'URL': article['URL'],
+                            'Summary': article['Summary'],
+                            'RSS Source': article['RSS Source']
+                        })
+                    
+                    # Apply date filter
+                    filtered_articles = filter_articles_by_date(articles_for_filtering, days_back=days_filter)
+                    
+                    # Convert back to the format expected by the rest of the app
+                    st.session_state.new_articles = []
+                    for filtered_article in filtered_articles:
+                        # Find the original row that matches this filtered article
+                        for original_article in new_articles:
+                            if original_article['URL'] == filtered_article['URL']:
+                                st.session_state.new_articles.append(original_article)
+                                break
+                    
+                    # Show results
+                    if st.session_state.new_articles:
+                        st.success(f"✅ Found {len(st.session_state.new_articles)} recent articles (last {days_filter} days)!")
+                        st.info(f"💰 Cost savings: Filtered out {len(new_articles) - len(st.session_state.new_articles)} older articles")
+                        
+                        # Show sample of what will be processed
+                        if len(st.session_state.new_articles) > 0:
+                            st.write("📋 Recent articles to process:")
+                            sample_df = pd.DataFrame(st.session_state.new_articles[:5])  # Show first 5
+                            st.dataframe(sample_df[['RSS Source', 'Title', 'Date Created']])
+                            if len(st.session_state.new_articles) > 5:
+                                st.write(f"... and {len(st.session_state.new_articles) - 5} more recent articles")
+                    else:
+                        st.info(f"ℹ️ Found {len(new_articles)} new articles, but none from the last {days_filter} days.")
+                        if len(new_articles) > 0:
+                            st.write("💡 **Suggestion:** Try expanding the date range to capture older articles, or check if RSS feeds are updating properly.")
+                            # Show sample of new articles that were filtered out
+                            st.write("📋 Sample new articles (outside date range):")
+                            sample_df = pd.DataFrame(new_articles[:3])
+                            st.dataframe(sample_df[['RSS Source', 'Title', 'Date Created']])
                 else:
-                    st.info(f"No new articles found from the last {days_filter} days.")
-            else:
-                st.info("No new articles found.")
+                    st.info("ℹ️ No new articles found.")
+                    st.write("**This means all RSS articles are already in your database.**")
+                    st.write("💡 **Suggestions:**")
+                    st.write("- RSS feeds may not have published new content since your last run")
+                    st.write("- Try clicking '🔄 Force Refresh RSS' to clear cache and fetch fresh data")
+                    st.write("- Check RSS feed sources manually to verify they're updating")
     
     # FIXED: Move this outside the button - only show if new articles exist
     if "new_articles" in st.session_state and st.session_state.new_articles:
